@@ -7,22 +7,23 @@ import (
 
 	dto "github.com/jokosaputro95/cms-news-api/internal/modules/auth/application/dto"
 	usecases "github.com/jokosaputro95/cms-news-api/internal/modules/auth/application/usecases"
+	shared "github.com/jokosaputro95/cms-news-api/internal/shared"
 )
 
 type AuthHandler struct {
 	registerUseCase *usecases.RegisterUser
 }
 
-type SuccessResponse struct {
+type Response struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
+	Error   *ErrorInfo  `json:"error,omitempty"`
 }
 
-type ErrorResponse struct {
-	Success bool   `json:"success"`
+type ErrorInfo struct {
+	Code    string `json:"code"`
 	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
 }
 
 func NewAuthHandler(registerUseCase *usecases.RegisterUser) *AuthHandler {
@@ -31,74 +32,68 @@ func NewAuthHandler(registerUseCase *usecases.RegisterUser) *AuthHandler {
 	}
 }
 
-// Register handles POST /api/auth/register
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	// Only allow POST method
 	if r.Method != http.MethodPost {
-		h.writeErrorResponse(w, "Method not allowed", http.StatusMethodNotAllowed)
+		h.writeErrorResponse(w, "METHOD_NOT_ALLOWED", "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Set response content type
 	w.Header().Set("Content-Type", "application/json")
 
-	// Parse request body
 	var input dto.RegisterUserInput
 	err := json.NewDecoder(r.Body).Decode(&input)
 	if err != nil {
-		h.writeErrorResponse(w, "Invalid request body", http.StatusBadRequest)
+		h.writeErrorResponse(w, "INVALID_JSON", "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	// Basic validation
-	if err := h.validateInput(&input); err != nil {
-		h.writeErrorResponse(w, err.Error(), http.StatusBadRequest)
+	if strings.TrimSpace(input.Username) == "" {
+		h.writeErrorResponse(w, "VALIDATION_ERROR", "Username is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(input.Email) == "" {
+		h.writeErrorResponse(w, "VALIDATION_ERROR", "Email is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(input.Password) == "" {
+		h.writeErrorResponse(w, "VALIDATION_ERROR", "Password is required", http.StatusBadRequest)
 		return
 	}
 
 	// Execute use case
 	result, err := h.registerUseCase.Execute(r.Context(), &input)
 	if err != nil {
-		statusCode := h.getStatusCodeFromError(err)
-		h.writeErrorResponse(w, err.Error(), statusCode)
+		errorCode := shared.GetErrorCode(err)
+		userMessage := shared.GetUserMessage(err)
+		statusCode := h.getStatusCodeFromErrorCode(errorCode)
+		
+		h.writeErrorResponse(w, errorCode, userMessage, statusCode)
 		return
 	}
 
-	// Success response
-	h.writeSuccessResponse(w, result, http.StatusCreated)
+	h.writeSuccessResponse(w, result, "User registered successfully", http.StatusCreated)
 }
 
-// validateInput basic input validation
-func (h *AuthHandler) validateInput(input *dto.RegisterUserInput) error {
-	if strings.TrimSpace(input.Username) == "" {
-		return &ValidationError{Message: "username is required"}
-	}
-	if strings.TrimSpace(input.Email) == "" {
-		return &ValidationError{Message: "email is required"}
-	}
-	if strings.TrimSpace(input.Password) == "" {
-		return &ValidationError{Message: "password is required"}
-	}
-	return nil
-}
-
-// getStatusCodeFromError determines HTTP status code based on error
-func (h *AuthHandler) getStatusCodeFromError(err error) int {
-	switch {
-	case strings.Contains(err.Error(), "already exists"):
-		return http.StatusConflict
-	case strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "cannot be empty"):
+func (h *AuthHandler) getStatusCodeFromErrorCode(errorCode string) int {
+	switch errorCode {
+	case "VALIDATION_ERROR":
 		return http.StatusBadRequest
+	case "CONFLICT_ERROR":
+		return http.StatusConflict
+	case "DATABASE_ERROR":
+		return http.StatusInternalServerError
+	case "NOT_FOUND":
+		return http.StatusNotFound
 	default:
 		return http.StatusInternalServerError
 	}
 }
 
-// writeSuccessResponse writes success response
-func (h *AuthHandler) writeSuccessResponse(w http.ResponseWriter, data interface{}, statusCode int) {
-	response := SuccessResponse{
+func (h *AuthHandler) writeSuccessResponse(w http.ResponseWriter, data interface{}, message string, statusCode int) {
+	response := Response{
 		Success: true,
-		Message: "Request processed successfully",
+		Message: message,
 		Data:    data,
 	}
 
@@ -106,23 +101,16 @@ func (h *AuthHandler) writeSuccessResponse(w http.ResponseWriter, data interface
 	json.NewEncoder(w).Encode(response)
 }
 
-// writeErrorResponse writes error response
-func (h *AuthHandler) writeErrorResponse(w http.ResponseWriter, message string, statusCode int) {
-	response := ErrorResponse{
+func (h *AuthHandler) writeErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
+	response := Response{
 		Success: false,
 		Message: "Request failed",
-		Error:   message,
+		Error: &ErrorInfo{
+			Code:    code,
+			Message: message,
+		},
 	}
 
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(response)
-}
-
-// ValidationError custom error type
-type ValidationError struct {
-	Message string
-}
-
-func (e *ValidationError) Error() string {
-	return e.Message
 }

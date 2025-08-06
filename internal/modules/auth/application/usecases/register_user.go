@@ -2,7 +2,6 @@ package usecases
 
 import (
 	"context"
-	"errors"
 
 	dto "github.com/jokosaputro95/cms-news-api/internal/modules/auth/application/dto"
 	entities "github.com/jokosaputro95/cms-news-api/internal/modules/auth/domain/entities"
@@ -35,46 +34,46 @@ func (r *RegisterUser) Execute(ctx context.Context, input *dto.RegisterUserInput
 	// 1. Validasi Input - Validasi raw password terlebih dahulu
 	usernameVO, err := vo.NewUsername(input.Username)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewValidationError(err.Error())
 	}
 
 	emailVO, err := vo.NewEmail(input.Email)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewValidationError(err.Error())
 	}
 
 	// ✅ Validasi raw password sebelum di-hash
 	_, err = vo.NewPassword(input.Password)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewValidationError(err.Error())
 	}
 
 	// 2. Memeriksa apakah email sudah terdaftar
 	isExist, err := r.userRepository.ExistsByEmail(ctx, input.Email)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewDatabaseError(err)
 	}
 	if isExist {
-		return nil, errors.New("email already exists")
+		return nil, shared.NewConflictError("Email already registered")
 	}
 
 	// 3. Hash password setelah validasi
 	hashedPassword, err := r.hasher.Hash(input.Password)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewDatabaseError(err)
 	}
 
 	// 4. Membuat Entity User baru dengan hashed password sebagai string
 	newUserID := r.uuidGenerator.NewUUID()
 	user, err := entities.NewUser(newUserID, *usernameVO, *emailVO, hashedPassword)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewValidationError(err.Error())
 	}
 
 	// 5. Menyimpan User ke repository
 	savedUser, err := r.userRepository.Save(ctx, user)
 	if err != nil {
-		return nil, err
+		return nil, shared.NewDatabaseError(err)
 	}
 
 	// 6. Mengembalikan DTO output
@@ -83,7 +82,7 @@ func (r *RegisterUser) Execute(ctx context.Context, input *dto.RegisterUserInput
 		Username:  savedUser.Username.String(),
 		Email:     savedUser.Email.String(),
 		CreatedAt: savedUser.CreatedAt,
-		UpdatedAt: savedUser.UpdatedAt, // ✅ Tambahkan UpdatedAt
+		UpdatedAt: savedUser.UpdatedAt,
 	}
 
 	return output, nil

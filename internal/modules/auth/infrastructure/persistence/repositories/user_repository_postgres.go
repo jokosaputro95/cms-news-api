@@ -18,10 +18,9 @@ func NewUserRepositoryPostgres(db *sql.DB) repos.UserRepository {
 	return &UserRepositoryPostgres{db: db}
 }
 
-
 func (r *UserRepositoryPostgres) Save(ctx context.Context, user *entities.User) (*entities.User, error) {
 	query := `
-		INSERT INTO users (id, username, email, password, created_at, updated_at)
+		INSERT INTO users (id, username, email, hashed_password, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING created_at, updated_at
 	`
@@ -51,7 +50,7 @@ func (r *UserRepositoryPostgres) Save(ctx context.Context, user *entities.User) 
 func (r *UserRepositoryPostgres) Update(ctx context.Context, user *entities.User) (*entities.User, error) {
 	query := `
 		UPDATE users
-		SET username = $2, email = $3, password = $4, updated_at = $5
+		SET username = $2, email = $3, hashed_password = $4, updated_at = $5
 		WHERE id = $1
 		RETURNING updated_at
 	`
@@ -76,7 +75,7 @@ func (r *UserRepositoryPostgres) Update(ctx context.Context, user *entities.User
 }
 
 func (r *UserRepositoryPostgres) FindByID(ctx context.Context, id string) (*entities.User, error) {
-	query := "SELECT id, username, email, password, created_at, updated_at FROM users WHERE id = $1"
+	query := "SELECT id, username, email, hashed_password, created_at, updated_at FROM users WHERE id = $1"
 	
 	var user entities.User
 	var username, email, password string
@@ -120,7 +119,7 @@ func (r *UserRepositoryPostgres) FindByID(ctx context.Context, id string) (*enti
 }
 
 func (r *UserRepositoryPostgres) FindByEmail(ctx context.Context, email string) (*entities.User, error) {
-	query := "SELECT id, username, email, password, created_at, updated_at FROM users WHERE email = $1"
+	query := "SELECT id, username, email, hashed_password, created_at, updated_at FROM users WHERE email = $1"
 	
 	var user entities.User
 	var username, emailStr, password string // ✅ Fix: scan email ke string dulu
@@ -164,7 +163,7 @@ func (r *UserRepositoryPostgres) FindByEmail(ctx context.Context, email string) 
 }
 
 func (r *UserRepositoryPostgres) FindAll(ctx context.Context) ([]*entities.User, error) {
-	query := "SELECT id, username, email, password, created_at, updated_at FROM users"
+	query := "SELECT id, username, email, hashed_password, created_at, updated_at FROM users"
 	
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
